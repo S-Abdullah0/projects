@@ -1,0 +1,82 @@
+#include <WiFi.h>
+#include "time.h"
+#include "esp_sntp.h"
+#include "TM1637Display.h"
+
+TM1637Display display(2,4);
+
+const char* ssid = "HUAWEI nova 7";
+const char* password = "12121212";
+
+const char *ntpServer1 = "pool.ntp.org";
+const char *ntpServer2 = "time.nist.gov";
+
+// Indian Standard Time (UTC +5:30)
+const long gmtOffset_sec = 5 * 3600 + 30 * 60; // UTC +5:30
+const int daylightOffset_sec = 0; // India does not observe daylight saving time
+
+// Remove this line because "IST-5:30" is not the correct way to set timezone in configTime
+// const char *time_zone = "IST-5:30"; 
+
+void printLocalTime() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("No time available (yet)");
+    return;
+  }
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  display.clear();
+  display.setBrightness(3); 
+  int hrs = timeinfo.tm_hour;
+  int mins = timeinfo.tm_min;
+  int time = hrs * 100 + mins;
+  display.showNumberDec(time, 0b11100000);
+  delay(1000);
+  display.showNumberDec(time);
+  delay(1000); 
+}
+
+
+// Callback function (gets called when time adjusts via NTP)
+void timeavailable(struct timeval *t) {
+  Serial.println("Got time adjustment from NTP!");
+  printLocalTime();
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  // First step is to configure WiFi STA and connect in order to get the current time and date.
+  Serial.printf("Connecting to %s ", ssid);
+  WiFi.begin(ssid, password);
+
+  /**
+   * NTP server address could be acquired via DHCP,
+   *
+   * NOTE: This call should be made BEFORE esp32 acquires IP address via DHCP,
+   * otherwise SNTP option 42 would be rejected by default.
+   * NOTE: configTime() function call if made AFTER DHCP-client run
+   * will OVERRIDE acquired NTP server address
+   */
+  esp_sntp_servermode_dhcp(1);  // (optional)
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println(" CONNECTED");
+
+  // set notification call-back function
+  sntp_set_time_sync_notification_cb(timeavailable);
+
+  /**
+   * Configure time with UTC offset +5:30 (Indian Standard Time)
+   * No daylight savings, so daylightOffset_sec is 0
+   */
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer1, ntpServer2);
+}
+
+void loop() {
+  delay(5000);
+  printLocalTime();  // it will take some time to sync time :)
+}
